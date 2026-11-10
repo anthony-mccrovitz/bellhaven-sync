@@ -1,0 +1,40 @@
+name: daily-bellhaven-sync
+
+on:
+  schedule:
+    - cron: "15 11 * * *"      # 11:15 UTC daily (06:15 US Eastern)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+
+      # The decision ledger (data/sync.db) must persist between runs so that
+      # already-decided proposals are not re-proposed. Restore the most recent copy.
+      - uses: actions/cache/restore@v4
+        with:
+          path: data/sync.db
+          key: sync-db-${{ github.run_id }}
+          restore-keys: sync-db-
+
+      - name: Run pipeline (proposes only; nothing is written to the CRM without review)
+        env:
+          CRM_TOKEN: ${{ secrets.CRM_TOKEN }}
+        run: python -m bellhaven_sync.pipeline
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/sync.db
+          key: sync-db-${{ github.run_id }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sync-db
+          path: data/sync.db

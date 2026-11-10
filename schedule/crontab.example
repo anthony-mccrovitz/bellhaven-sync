@@ -1,0 +1,7 @@
+# Run the Bellhaven -> CRM sync every day at 06:15 local time.
+# Re-runs are safe: proposals are fingerprinted and anything already approved,
+# rejected or applied is never re-queued. New/changed findings land in the review
+# queue for a human to approve in the review app (python app.py).
+#
+#   crontab -e   and paste:
+15 6 * * *  cd /path/to/bellhaven-sync && /usr/bin/env python3 -m bellhaven_sync.pipeline >> data/pipeline.log 2>&1

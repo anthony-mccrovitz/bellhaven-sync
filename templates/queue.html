@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Review queue <span class="muted small">— {{ rows|length }} {{ status }} proposal(s)</span></h1>
+<div class="filters small">
+  Status:
+  {% for s in ['pending','applied','rejected','failed','withdrawn','all'] %}<a class="{{ 'active' if s==status }}" href="{{ url_for('queue', status=s, kind=kind) }}">{{ s }}</a>{% endfor %}
+  &nbsp;·&nbsp; Kind:
+  <a class="{{ 'active' if not kind }}" href="{{ url_for('queue', status=status) }}">all</a>
+  {% for k in kinds %}<a class="{{ 'active' if k==kind }}" href="{{ url_for('queue', status=status, kind=k) }}">{{ KIND_LABELS.get(k,k) }}</a>{% endfor %}
+</div>
+<form method="post" action="{{ url_for('bulk') }}">
+<div class="panel" style="padding:0">
+<table>
+<thead><tr><th></th><th>Kind</th><th>Proposal</th><th>Confidence</th><th>Status</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr>
+  <td>{% if r.status in ['pending','withdrawn'] %}<input type="checkbox" name="ids" value="{{ r.id }}">{% endif %}</td>
+  <td><span class="pill k-{{ r.kind }}">{{ KIND_LABELS.get(r.kind, r.kind) }}</span></td>
+  <td><a href="{{ url_for('proposal', pid=r.id) }}"><b>{{ r.title }}</b></a><div class="small muted">{{ r.summary[:220] }}{% if r.summary|length > 220 %}…{% endif %}</div></td>
+  <td class="c-{{ r.confidence }}">{{ r.confidence }}</td>
+  <td class="s-{{ r.status }}">{{ r.status }}{% if r.decided_by %}<div class="small muted">{{ r.decided_by }} · {{ r.decided_at }}</div>{% endif %}</td>
+</tr>
+{% else %}
+<tr><td colspan="5" class="muted">Nothing here. Run the pipeline to generate proposals.</td></tr>
+{% endfor %}
+</tbody></table>
+</div>
+{% if status in ['pending','withdrawn','all'] and rows %}
+<div class="actions">
+  <input type="text" name="reviewer" placeholder="Your name" value="{{ reviewer }}">
+  <button class="approve" name="action" value="approve" type="submit" onclick="return confirm('Approve and write the selected proposals to the CRM?')">Approve selected → write to CRM</button>
+  <button class="reject" name="action" value="reject" type="submit">Reject selected</button>
+</div>
+{% endif %}
+</form>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ p.title }}{% endblock %}
+{% block body %}
+{% set ev = p.evidence %}
+<p class="small"><a href="{{ url_for('queue') }}">← queue</a></p>
+<h1><span class="pill k-{{ p.kind }}">{{ KIND_LABELS.get(p.kind, p.kind) }}</span> &nbsp;{{ p.title }}</h1>
+<p>{{ p.summary }}</p>
+<p class="small muted">Confidence <b class="c-{{ p.confidence }}">{{ p.confidence }}</b> · status <b class="s-{{ p.status }}">{{ p.status }}</b>
+ · first seen run {{ p.first_seen_run }} · last seen run {{ p.last_seen_run }} · fingerprint <code>{{ p.fingerprint }}</code>
+{% if p.decided_by %} · decided by {{ p.decided_by }} at {{ p.decided_at }}{% if p.decision_note %} ("{{ p.decision_note }}"){% endif %}{% endif %}</p>
+
+{% if p.status in ['pending','withdrawn'] %}
+<div class="panel">
+  <form method="post" style="display:inline" action="{{ url_for('approve', pid=p.id) }}">
+    <input type="hidden" name="next" value="{{ url_for('proposal', pid=p.id) }}">
+    <div class="actions">
+      <input type="text" name="reviewer" placeholder="Your name" value="{{ reviewer }}">
+      <input type="text" name="note" placeholder="Optional note" style="width:280px">
+      <button class="approve" type="submit">Approve → write to CRM</button>
+  </form>
+  <form method="post" style="display:inline" action="{{ url_for('reject', pid=p.id) }}">
+      <input type="hidden" name="reviewer" value="{{ reviewer }}">
+      <input type="text" name="note" placeholder="Reason (optional)" style="width:220px">
+      <button class="reject" type="submit">Reject</button>
+    </div>
+  </form>
+</div>
+{% elif p.status in ['rejected','failed'] %}
+<div class="panel"><form method="post" action="{{ url_for('reopen', pid=p.id) }}"><button class="ghost" type="submit">Re-open (back to pending)</button></form></div>
+{% endif %}
+
+<div class="grid">
+  <div class="panel">
+    <h2>Website says</h2>
+    {% if ev.location %}
+      <b>{{ ev.location.name }}</b><br>
+      {{ ev.location.street }}<br>{{ ev.location.city }}, {{ ev.location.state }} {{ ev.location.zip }}<br>
+      <span class="small muted">Care: {{ ev.location.care_offerings|join(', ') }} · Admin: {{ ev.location.administrator }} · {{ ev.location.phone }}</span><br>
+      <a class="small" href="{{ ev.location.url }}" target="_blank">open listing ↗</a>
+      {% if ev.location.source != 'directory' %}<span class="small muted">(found on the {{ ev.location.source }}, not in the directory)</span>{% endif %}
+    {% else %}
+      <span class="muted">Not listed on the website.</span> <a class="small" href="{{ ev.website_checked }}" target="_blank">directory ↗</a>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <h2>CRM has</h2>
+    {% if ev.account %}
+      {% set a = ev.account %}
+      <b>{{ a.name }}</b> <span class="small muted">{{ a.account_id }}</span><br>
+      {{ a.billing_street }}<br>{{ a.billing_city }}, {{ a.billing_state }} {{ a.billing_zip }}<br>
+      <span class="small muted">Parent: {{ a.parent_name or '— none —' }} · {{ a.care_type }} · {{ a.status }} · {{ a.phone }}</span><br>
+      <span class="small">Lifetime revenue <b>{{ a.lifetime_revenue }}</b> · Outstanding AR <b>{{ a.outstanding_ar }}</b></span>
+      {% if a.note %}<div class="small muted">Note: {{ a.note }}</div>{% endif %}<br>
+      <a class="small" href="{{ ev.crm_url }}" target="_blank">open in CRM browser ↗</a>
+      {% if ev.tier %}<div style="margin-top:8px">Match tier <b>{{ ev.tier }}</b>:
+        {% for k, v in ev.signals.items() %}{% if k in ['name_sim','token_overlap'] %}<span class="sig">name_sim {{ v }}</span>{% else %}<span class="sig {{ 'on' if v else 'off' }}">{{ k }}</span>{% endif %}{% endfor %}
+      </div>{% endif %}
+    {% else %}
+      <span class="muted">No CRM account.</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if ev.changes %}
+<div class="panel"><h2>Proposed field changes</h2>
+<table class="diff"><thead><tr><th>Field</th><th>Current</th><th>Proposed</th></tr></thead><tbody>
+{% for f, c in ev.changes.items() %}<tr><td>{{ f }}</td><td class="from">{{ c.from or '—' }}</td><td class="to">{{ c.to }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+
+{% if ev.survivor %}
+<div class="panel"><h2>Surviving account</h2>
+<b>{{ ev.survivor.name }}</b> <span class="small muted">{{ ev.survivor.account_id }}</span> · parent {{ ev.survivor.parent_name or '—' }} · revenue {{ ev.survivor.lifetime_revenue }} / AR {{ ev.survivor.outstanding_ar }}
+· <a class="small" href="{{ ev.survivor_crm_url }}" target="_blank">CRM ↗</a><div class="small muted">Why this one: {{ ev.survivor_reason }}</div></div>
+{% endif %}
+
+{% if ev.successor %}
+<div class="panel"><h2>Successor account (same address, different parent)</h2>
+<b>{{ ev.successor.name }}</b> <span class="small muted">{{ ev.successor.account_id }}</span> · parent {{ ev.successor.parent_name }} · {{ ev.successor.billing_street }}, {{ ev.successor.billing_city }}
+· <a class="small" href="{{ ev.successor_crm_url }}" target="_blank">CRM ↗</a></div>
+{% endif %}
+
+{% if ev.sop %}<div class="panel"><h2>SOP applied</h2>{{ ev.sop }}</div>{% endif %}
+
+{% if ev.group and ev.group|length > 1 %}
+<div class="panel"><h2>All live accounts for this facility</h2>
+<table><thead><tr><th>Account</th><th>Parent</th><th>Address</th><th>Rev / AR</th><th>Tier</th></tr></thead><tbody>
+{% for g in ev.group %}<tr><td>{{ g.account.name }} <span class="small muted">{{ g.account.account_id }}</span></td><td>{{ g.account.parent_name or '—' }}</td><td>{{ g.account.billing_street }}, {{ g.account.billing_city }}</td><td>{{ g.account.lifetime_revenue }} / {{ g.account.outstanding_ar }}</td><td>{{ g.tier }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+
+{% if ev.near_misses %}
+<div class="panel"><h2>Near misses (not linked)</h2>
+<table><thead><tr><th>Account</th><th>Parent</th><th>Address</th><th>Status</th><th>Why not</th></tr></thead><tbody>
+{% for n in ev.near_misses %}<tr><td>{{ n.account.name }} <span class="small muted">{{ n.account.account_id }}</span></td><td>{{ n.account.parent_name or '—' }}</td><td>{{ n.account.billing_street }}, {{ n.account.billing_city }} {{ n.account.billing_state }}</td><td>{{ n.account.status }}</td>
+<td class="small">{% for k, v in n.signals.items() %}{% if k in ['name_sim','token_overlap'] %}<span class="sig">sim {{ v }}</span>{% elif v %}<span class="sig on">{{ k }}</span>{% endif %}{% endfor %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+
+<div class="panel"><h2>API actions this approval will run</h2><pre>{{ p.actions|pretty }}</pre></div>
+{% if p.result %}<div class="panel"><h2>Write result</h2><pre>{{ p.result|pretty }}</pre></div>{% endif %}
+{% endblock %}

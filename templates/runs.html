@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Pipeline runs</h1>
+<div class="panel" style="padding:0"><table>
+<thead><tr><th>#</th><th>Started</th><th>Finished</th><th>Summary</th></tr></thead><tbody>
+{% for r in runs %}<tr><td>{{ r.id }}</td><td>{{ r.started_at }}</td><td>{{ r.finished_at }}</td><td class="small"><code>{{ r.summary_json }}</code></td></tr>{% endfor %}
+</tbody></table></div>
+<h1 style="margin-top:28px">Audit log</h1>
+<div class="panel" style="padding:0"><table>
+<thead><tr><th>When</th><th>Proposal</th><th>Event</th><th>Detail</th></tr></thead><tbody>
+{% for a in audit %}<tr><td class="small">{{ a.at }}</td><td><a href="{{ url_for('proposal', pid=a.proposal_id) }}">#{{ a.proposal_id }}</a></td><td>{{ a.event }}</td><td class="small muted">{{ a.detail_json[:200] }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}
