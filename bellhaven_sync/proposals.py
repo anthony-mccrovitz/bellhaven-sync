@@ -74,16 +74,22 @@ def public(a: dict) -> dict:
     return {k: a.get(k) for k in PUBLIC_FIELDS}
 
 
+_CARE_MAP = {norm_care(k): v for k, v in CARE_TYPE_MAP.items()}
+
+
+def care_type_for(offering: str) -> str:
+    return _CARE_MAP.get(norm_care(offering), "")
+
+
 def primary_care_type(loc: Location) -> str:
     for o in loc.care_offerings:
-        ct = CARE_TYPE_MAP.get(norm_care(o))
-        if ct:
-            return ct
+        if care_type_for(o):
+            return care_type_for(o)
     return ""
 
 
 def mapped_care_types(loc: Location) -> set[str]:
-    return {CARE_TYPE_MAP[norm_care(o)] for o in loc.care_offerings if norm_care(o) in CARE_TYPE_MAP}
+    return {care_type_for(o) for o in loc.care_offerings if care_type_for(o)}
 
 
 def new_account_fields(loc: Location, parent_id: str, reason: str) -> dict:

@@ -7,7 +7,7 @@
 <td><a href="{{ r.location.url }}" target="_blank">{{ r.location.name }}</a><div class="small muted">{{ r.location.street }}, {{ r.location.city }} {{ r.location.state }}</div></td>
 <td><a href="{{ crm_browser }}/{{ r.account_id }}" target="_blank">{{ r.account_id }}</a></td>
 <td>{{ r.tier }}</td>
-<td class="small">{% for k, v in r.signals.items() %}{% if k in ['name_sim','token_overlap'] %}<span class="sig">sim {{ v }}</span>{% elif v %}<span class="sig on">{{ k }}</span>{% endif %}{% endfor %}</td>
+<td class="small">{% for k, v in r.signals.items() %}{% if k in ['name_sim','token_overlap'] %}<span class="sig">{{ k }} {{ v }}</span>{% elif v %}<span class="sig on">{{ k }}</span>{% endif %}{% endfor %}</td>
 <td class="small">{{ r.note }}</td></tr>{% endfor %}
 </tbody></table></div>
 {% endblock %}

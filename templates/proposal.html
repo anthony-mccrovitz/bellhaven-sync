@@ -53,7 +53,7 @@
       {% if a.note %}<div class="small muted">Note: {{ a.note }}</div>{% endif %}<br>
       <a class="small" href="{{ ev.crm_url }}" target="_blank">open in CRM browser ↗</a>
       {% if ev.tier %}<div style="margin-top:8px">Match tier <b>{{ ev.tier }}</b>:
-        {% for k, v in ev.signals.items() %}{% if k in ['name_sim','token_overlap'] %}<span class="sig">name_sim {{ v }}</span>{% else %}<span class="sig {{ 'on' if v else 'off' }}">{{ k }}</span>{% endif %}{% endfor %}
+        {% for k, v in ev.signals.items() %}{% if k in ['name_sim','token_overlap'] %}<span class="sig">{{ k }} {{ v }}</span>{% else %}<span class="sig {{ 'on' if v else 'off' }}">{{ k }}</span>{% endif %}{% endfor %}
       </div>{% endif %}
     {% else %}
       <span class="muted">No CRM account.</span>
@@ -93,7 +93,7 @@
 <div class="panel"><h2>Near misses (not linked)</h2>
 <table><thead><tr><th>Account</th><th>Parent</th><th>Address</th><th>Status</th><th>Why not</th></tr></thead><tbody>
 {% for n in ev.near_misses %}<tr><td>{{ n.account.name }} <span class="small muted">{{ n.account.account_id }}</span></td><td>{{ n.account.parent_name or '—' }}</td><td>{{ n.account.billing_street }}, {{ n.account.billing_city }} {{ n.account.billing_state }}</td><td>{{ n.account.status }}</td>
-<td class="small">{% for k, v in n.signals.items() %}{% if k in ['name_sim','token_overlap'] %}<span class="sig">sim {{ v }}</span>{% elif v %}<span class="sig on">{{ k }}</span>{% endif %}{% endfor %}</td></tr>{% endfor %}
+<td class="small">{% for k, v in n.signals.items() %}{% if k in ['name_sim','token_overlap'] %}<span class="sig">{{ k }} {{ v }}</span>{% elif v %}<span class="sig on">{{ k }}</span>{% endif %}{% endfor %}</td></tr>{% endfor %}
 </tbody></table></div>
 {% endif %}
 

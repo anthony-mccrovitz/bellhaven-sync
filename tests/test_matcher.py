@@ -123,6 +123,13 @@ class MatcherTests(unittest.TestCase):
         self.assertEqual(ps[0].kind, "divest_review")
         self.assertEqual(ps[0].actions[0]["fields"]["status"], "Needs Review")
 
+    def test_care_offerings_map_to_crm_care_type(self):
+        from bellhaven_sync.proposals import mapped_care_types, primary_care_type
+        l = loc("x", "X", "1 Main St", "T", "OH", "11111", care=("Short-Term Rehabilitation & Nursing",))
+        self.assertEqual(primary_care_type(l), "Skilled Nursing")
+        l = loc("y", "Y", "1 Main St", "T", "OH", "11111", care=("Assisted Living", "Memory Support"))
+        self.assertEqual(mapped_care_types(l), {"Assisted Living", "Memory Care"})
+
     def test_fingerprint_is_stable_across_note_dates(self):
         a = acct("A1", "Riverbend Manor Care Center", "150 River St", "Chagrin Falls", "OH", "44022")
         l = loc("cf", "Bellhaven of Chagrin Falls", "150 River St", "Chagrin Falls", "OH", "44022")
