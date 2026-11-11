@@ -82,6 +82,20 @@
 
 {% if ev.sop %}<div class="panel"><h2>SOP applied</h2>{{ ev.sop }}</div>{% endif %}
 
+{% if ev.contacts_moved %}
+<div class="panel"><h2>Contacts re-pointed to the surviving account</h2>
+<table><thead><tr><th>Name</th><th>Title</th><th>Email</th><th>Phone</th></tr></thead><tbody>
+{% for c in ev.contacts_moved %}<tr><td>{{ c.name }} <span class="small muted">{{ c.contact_id }}</span></td><td>{{ c.title }}</td><td>{{ c.email }}</td><td>{{ c.phone }}</td></tr>{% endfor %}
+</tbody></table><div class="small muted">Nobody is left attached to an Inactive record.</div></div>
+{% endif %}
+
+{% if ev.children %}
+<div class="panel"><h2>Live child accounts of this parent (all on the Bellhaven website)</h2>
+<table><thead><tr><th>Account</th><th>Address</th><th>Rev / AR</th><th>Status</th></tr></thead><tbody>
+{% for k in ev.children %}<tr><td>{{ k.name }} <span class="small muted">{{ k.account_id }}</span></td><td>{{ k.billing_street }}, {{ k.billing_city }} {{ k.billing_state }}</td><td>{{ k.lifetime_revenue }} / {{ k.outstanding_ar }}</td><td>{{ k.status }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+
 {% if ev.group and ev.group|length > 1 %}
 <div class="panel"><h2>All live accounts for this facility</h2>
 <table><thead><tr><th>Account</th><th>Parent</th><th>Address</th><th>Rev / AR</th><th>Tier</th></tr></thead><tbody>
@@ -98,5 +112,19 @@
 {% endif %}
 
 <div class="panel"><h2>API actions this approval will run</h2><pre>{{ p.actions|pretty }}</pre></div>
-{% if p.result %}<div class="panel"><h2>Write result</h2><pre>{{ p.result|pretty }}</pre></div>{% endif %}
+{% if p.result %}
+<div class="panel"><h2>Write result
+  {% if p.result.landed %}<span class="landed">✓ all fields verified in CRM</span>{% elif p.result.ok %}<span class="landed bad">written, but read-back differs</span>{% else %}<span class="landed bad">✗ failed at step {{ p.result.steps|length }}</span>{% endif %}</h2>
+  {% for s in p.result.steps %}
+    <div class="landed-head">{{ s.op }}
+      {% if s.account_id %}<span class="small muted">{{ s.account_id }}</span> <a class="small" href="{{ crm_browser }}/{{ s.account_id }}" target="_blank">open in CRM ↗</a>{% endif %}
+      {% if s.contact_id %}<span class="small muted">contact {{ s.contact_id }}</span>{% endif %}
+      {% if not s.ok %}<span class="landed bad">✗ {{ s.error }}</span>{% endif %}
+    </div>
+    {% for f, okv in (s.verified or {}).items() %}<span class="landed {{ '' if okv else 'bad' }}">{{ '✓' if okv else '✗' }} {{ f }} = {{ s.after.get(f) if f != 'note' else 'note appended' }}</span>{% endfor %}
+    {% if s.op == 'create_contact' and s.ok %}<span class="landed">✓ contact created on {{ s.account_id }}</span>{% endif %}
+  {% endfor %}
+  <details style="margin-top:10px"><summary class="small muted">raw response</summary><pre>{{ p.result|pretty }}</pre></details>
+</div>
+{% endif %}
 {% endblock %}

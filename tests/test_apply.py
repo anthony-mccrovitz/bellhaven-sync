@@ -35,6 +35,15 @@ class FakeCRM:
     def get_account(self, aid):
         return self.accounts[aid]
 
+    def update_contact(self, cid, fields):
+        self.calls.append(("update_contact", cid, fields))
+        self.contacts = getattr(self, "contacts", {"C9": {"contact_id": "C9", "account_id": "OLD"}})
+        self.contacts[cid].update(fields)
+        return {"contact_id": cid, "message": "updated"}
+
+    def get_contact(self, cid):
+        return self.contacts[cid]
+
 
 def chow_proposal():
     return Proposal(kind="chow", subject="OLD", title="t", summary="s", confidence="high", evidence={}, actions=[
@@ -66,6 +75,44 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(crm.calls[1], ("update_account", "OLD", {"chow_current_account": "NEW1"}))
         self.assertEqual(crm.calls[2][1]["account_id"], "NEW1")
         self.assertEqual(self.store.get_proposal(self.pid)["status"], "applied")
+
+    def test_every_written_field_is_verified_by_read_back(self):
+        crm = FakeCRM()
+        self.store.decide(self.pid, "approved", "me")
+        res = apply_proposal(self.store, crm, self.pid)
+        self.assertTrue(res["landed"])
+        self.assertEqual(res["steps"][0]["verified"], {"name": True, "parent_id": True})
+        self.assertEqual(res["steps"][1]["verified"], {"chow_current_account": True})
+
+    def test_silently_dropped_field_is_reported_as_not_landed(self):
+        class DroppingCRM(FakeCRM):
+            def update_account(self, aid, fields):
+                r = super().update_account(aid, fields)
+                self.accounts[aid]["chow_current_account"] = ""  # pretend the CRM ignored it
+                return r
+        crm = DroppingCRM()
+        self.store.decide(self.pid, "approved", "me")
+        res = apply_proposal(self.store, crm, self.pid)
+        self.assertTrue(res["ok"])
+        self.assertFalse(res["landed"])
+        self.assertEqual(res["steps"][1]["verified"], {"chow_current_account": False})
+
+    def test_contact_repointing_is_applied_and_verified(self):
+        p = Proposal(kind="duplicate", subject="OLD", title="t", summary="s", confidence="high", evidence={}, actions=[
+            {"op": "update_account", "account_id": "OLD", "fields": {"status": "Inactive", "duplicate_of_account": "KEEP",
+                                                                      "note": "old\n[bellhaven-sync 2026-11-11] dup"}},
+            {"op": "update_contact", "contact_id": "C9", "fields": {"account_id": "KEEP"}},
+        ])
+        self.store.upsert_proposals(self.store.start_run(), [p])
+        pid = [r for r in self.store.list_proposals("pending") if r["kind"] == "duplicate"][0]["id"]
+        crm = FakeCRM()
+        crm.accounts["OLD"]["note"] = "old"
+        self.store.decide(pid, "approved", "me")
+        res = apply_proposal(self.store, crm, pid)
+        self.assertTrue(res["landed"])
+        self.assertEqual(crm.calls[-1], ("update_contact", "C9", {"account_id": "KEEP"}))
+        self.assertEqual(res["steps"][0]["verified"], {"status": True, "duplicate_of_account": True, "note": True})
+        self.assertEqual(res["steps"][1]["verified"], {"account_id": True})
 
     def test_failure_stops_the_bundle_and_is_recorded(self):
         crm = FakeCRM(fail_on="update_account")

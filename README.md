@@ -55,15 +55,17 @@ python -m unittest discover -s tests          # 20 unit tests
    | `reparent` | matched, wrong parent, **no** outstanding AR | PATCH `parent_id` + note |
    | `chow` | matched, wrong parent, revenue **and** AR > 0 (billing SOP) | leave old account untouched, POST new account under Bellhaven, PATCH `chow_current_account` on old, POST administrator contact |
    | `create` | no account for a website location | POST account + administrator contact |
-   | `duplicate` | extra live account for the same facility | PATCH loser `status=Inactive`, `duplicate_of_account=survivor` |
+   | `duplicate` | extra live account for the same facility | PATCH loser `status=Inactive`, `duplicate_of_account=survivor`; PATCH each active contact's `account_id` → survivor |
    | `divest_chow` | Bellhaven child not on website, successor account at same address under another parent, has AR | PATCH `chow_current_account` → successor + note |
-   | `divest_duplicate` | same, no AR | PATCH `status=Inactive`, `duplicate_of_account` → successor |
+   | `divest_duplicate` | same, no AR | PATCH `status=Inactive`, `duplicate_of_account` → successor; contacts → successor |
    | `divest_review` | Bellhaven child not on website, no successor known | PATCH `status=Needs Review` + note |
+   | `parent_note` | every live child of another operator's parent account is on the Bellhaven website | PATCH note on that parent (status untouched) |
 
    Notes are appended, never overwritten, and tagged `[bellhaven-sync <date>]`.
 4. **Review app** (`app.py`) shows each proposal with the website record, the CRM record (revenue /
    AR / parent), the match signals that fired, a before→after diff, near misses, and the exact API
-   calls. Approve writes immediately through the API and shows the result; Reject records why.
+   calls. Approve writes immediately through the API, reads every record back and shows a per-field
+   "✓ landed" check against what the CRM now holds; Reject records why.
    Rejected items can be re-opened. Links jump to the read-only CRM browser so you can see the change land.
 5. **Ledger** (`bellhaven_sync/store.py`, SQLite in `data/sync.db`) records runs, proposals,
    decisions and an audit log.

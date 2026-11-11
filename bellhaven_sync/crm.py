@@ -12,6 +12,7 @@ MUTABLE_ACCOUNT_FIELDS = [
     "billing_city", "billing_state", "billing_zip", "chow_current_account",
     "duplicate_of_account",
 ]
+MUTABLE_CONTACT_FIELDS = ["name", "title", "email", "phone", "is_active", "account_id"]
 
 
 class CRMError(RuntimeError):
@@ -80,3 +81,12 @@ class CRM:
 
     def create_contact(self, fields: dict) -> dict:
         return self._req("POST", "/contacts", json=fields)
+
+    def get_contact(self, contact_id: str) -> dict:
+        return self._req("GET", f"/contacts/{contact_id}")
+
+    def update_contact(self, contact_id: str, fields: dict) -> dict:
+        bad = set(fields) - set(MUTABLE_CONTACT_FIELDS)
+        if bad:
+            raise CRMError(f"not mutable on contacts: {sorted(bad)}")
+        return self._req("PATCH", f"/contacts/{contact_id}", json=fields)

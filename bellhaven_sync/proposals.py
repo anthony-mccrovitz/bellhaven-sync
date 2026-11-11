@@ -13,6 +13,11 @@ Kinds
   divest_review     Bellhaven child no longer on the website, no successor known -> Needs Review
   divest_chow       ...successor account exists under another parent, old account has AR -> chow link
   divest_duplicate  ...successor exists, no AR -> old copy becomes Inactive duplicate of successor
+  parent_note       every live child of another operator's parent account is now a Bellhaven
+                    facility -> note on that parent (status untouched; billing may still reference it)
+
+Retiring a duplicate also re-points its active contacts at the surviving account, so nobody
+is orphaned on an Inactive record.
 """
 from __future__ import annotations
 
@@ -21,8 +26,8 @@ import json
 from dataclasses import dataclass, field
 from datetime import date
 
-from .config import (CARE_TYPE_MAP, CRM_BASE_URL, NOTE_TAG, PROPOSE_COSMETIC_RENAMES,
-                     PROPOSE_PHONE_UPDATES)
+from .config import (CARE_TYPE_MAP, CRM_BASE_URL, MOVE_CONTACTS_FROM_DUPLICATES, NOTE_TAG,
+                     PROPOSE_COSMETIC_RENAMES, PROPOSE_PHONE_UPDATES, SOLD_ACCOUNT_STATUS)
 from .matcher import MatchResult, find_successor, is_live, is_parent_account
 from .normalize import norm_care, norm_name, norm_phone, norm_street, norm_zip
 from .scraper import Location
@@ -52,7 +57,8 @@ def make_fingerprint(kind: str, subject: str, actions: list[dict]) -> str:
     """Stable across runs: ignores notes (which carry dates) and 'before' snapshots."""
     def strip(a: dict) -> dict:
         f = {k: v for k, v in a.get("fields", {}).items() if k != "note"}
-        return {"op": a["op"], "account_id": a.get("account_id", ""), "ref": a.get("ref", ""), "fields": f}
+        return {"op": a["op"], "account_id": a.get("account_id", ""), "contact_id": a.get("contact_id", ""),
+                "ref": a.get("ref", ""), "fields": f}
     payload = json.dumps({"kind": kind, "subject": subject, "actions": [strip(a) for a in actions]}, sort_keys=True)
     return hashlib.sha256(payload.encode()).hexdigest()[:24]
 
@@ -118,12 +124,32 @@ def _dedupe_candidates(near) -> list[dict]:
     return [{"account": public(c.account), "tier": c.tier, "signals": c.signals} for c in near[:6]]
 
 
+def contacts_by_account(contacts: list[dict] | None) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for c in contacts or []:
+        out.setdefault(c.get("account_id", ""), []).append(c)
+    return out
+
+
+def move_contact_actions(from_account: dict, to_account_id: str, by_account: dict[str, list[dict]]) -> tuple[list[dict], list[dict]]:
+    """Re-point every active contact on a retired account at its replacement.
+    Returns (actions, contacts) so the evidence can list who moves."""
+    if not MOVE_CONTACTS_FROM_DUPLICATES:
+        return [], []
+    moved = [c for c in by_account.get(from_account["account_id"], []) if c.get("is_active", True)]
+    actions = [{"op": "update_contact", "contact_id": c["contact_id"], "fields": {"account_id": to_account_id},
+                "before": {"account_id": c.get("account_id")}} for c in moved]
+    return actions, [{k: c.get(k) for k in ("contact_id", "name", "title", "email", "phone")} for c in moved]
+
+
 # --------------------------------------------------------------------------- forward pass
 
-def proposals_for_match(mr: MatchResult, parent_id: str, parent_name: str, token: str) -> tuple[list[Proposal], dict | None]:
+def proposals_for_match(mr: MatchResult, parent_id: str, parent_name: str, token: str,
+                        contacts: list[dict] | None = None) -> tuple[list[Proposal], dict | None]:
     """Returns (proposals, match_row). match_row is recorded for the 'matched' report."""
     loc = mr.location
     out: list[Proposal] = []
+    by_account = contacts_by_account(contacts)
     base_evidence = {"location": loc.to_dict(), "near_misses": _dedupe_candidates(mr.near)}
 
     if mr.survivor is None:
@@ -259,18 +285,20 @@ def proposals_for_match(mr: MatchResult, parent_id: str, parent_name: str, token
                                 f"Duplicate of {a['account_id']} ({loc.name}) - same facility at {loc.street}, {loc.city} {loc.state}. "
                                 f"Survivor chosen for: {_survivor_reason(surv, loser, parent_id)}. Source: {loc.url}"),
         }
+        moves, moved = move_contact_actions(la, a["account_id"], by_account)
         out.append(Proposal(
             kind="duplicate", subject=la["account_id"],
             title=f"Duplicate: {la['name']} → {a['name']}",
             summary=(f"'{la['name']}' (parent: {la.get('parent_name') or 'none'}) and '{a['name']}' (parent: {a.get('parent_name') or 'none'}) "
-                     f"are both live accounts for {loc.street}, {loc.city}. Keep {a['account_id']}; mark this one Inactive with duplicate_of_account."),
+                     f"are both live accounts for {loc.street}, {loc.city}. Keep {a['account_id']}; mark this one Inactive with duplicate_of_account."
+                     + (f" {len(moved)} active contact(s) move to the survivor." if moved else "")),
             confidence="high",
             evidence={**base_evidence, "account": public(la), "tier": loser.tier, "signals": loser.signals,
                       "crm_url": crm_link(la["account_id"], token),
                       "survivor": public(a), "survivor_crm_url": crm_link(a["account_id"], token),
-                      "survivor_reason": _survivor_reason(surv, loser, parent_id)},
+                      "survivor_reason": _survivor_reason(surv, loser, parent_id), "contacts_moved": moved},
             actions=[{"op": "update_account", "account_id": la["account_id"], "fields": lfields,
-                      "before": {"status": la.get("status"), "duplicate_of_account": la.get("duplicate_of_account", "")}}]))
+                      "before": {"status": la.get("status"), "duplicate_of_account": la.get("duplicate_of_account", "")}}] + moves))
 
     row = {"slug": loc.slug, "location": loc.to_dict(), "account_id": a["account_id"], "tier": surv.tier,
            "signals": surv.signals,
@@ -292,8 +320,9 @@ def _survivor_reason(surv, loser, parent_id: str) -> str:
 # --------------------------------------------------------------------------- reverse pass
 
 def proposals_for_divested(accounts: list[dict], matched_ids: set[str], parent_id: str, parent_name: str,
-                           token: str, site_url: str) -> list[Proposal]:
+                           token: str, site_url: str, contacts: list[dict] | None = None) -> list[Proposal]:
     out: list[Proposal] = []
+    by_account = contacts_by_account(contacts)
     for a in accounts:
         if is_parent_account(a) or not is_live(a) or a.get("parent_id") != parent_id:
             continue
@@ -310,28 +339,34 @@ def proposals_for_divested(accounts: list[dict], matched_ids: set[str], parent_i
                                           f"No longer listed on the Bellhaven website. Live account for the same address exists under "
                                           f"{succ.get('parent_name')} ({succ['account_id']}). Account has revenue {a.get('lifetime_revenue')} "
                                           f"and outstanding AR {a.get('outstanding_ar')}, so it is preserved for billing and linked via chow_current_account.")}
+            before = {"chow_current_account": a.get("chow_current_account", "")}
+            if SOLD_ACCOUNT_STATUS and a.get("status") != SOLD_ACCOUNT_STATUS:
+                fields["status"] = SOLD_ACCOUNT_STATUS
+                before["status"] = a.get("status")
             out.append(Proposal(
                 kind="divest_chow", subject=a["account_id"],
                 title=f"Sold (CHOW link): {a['name']} → {succ['name']}",
                 summary=(f"'{a['name']}' is under Bellhaven in the CRM but not on the website. '{succ['name']}' under "
                          f"{succ.get('parent_name')} shares its street address, so the facility changed hands. It has outstanding AR, "
                          f"so per SOP it is left in place and chow_current_account points at the successor."),
-                confidence="high", evidence=ev,
-                actions=[{"op": "update_account", "account_id": a["account_id"], "fields": fields,
-                          "before": {"chow_current_account": a.get("chow_current_account", "")}}]))
+                confidence="high", evidence={**ev, "sop": "revenue>0 and outstanding_ar>0 -> parent untouched, chow link only"
+                                             + (f"; status -> {SOLD_ACCOUNT_STATUS}" if SOLD_ACCOUNT_STATUS else "")},
+                actions=[{"op": "update_account", "account_id": a["account_id"], "fields": fields, "before": before}]))
         elif succ:
             fields = {"status": "Inactive", "duplicate_of_account": succ["account_id"],
                       "note": append_note(a.get("note", ""),
                                           f"No longer listed on the Bellhaven website; same address is now '{succ['name']}' under "
                                           f"{succ.get('parent_name')} ({succ['account_id']}). No outstanding AR, so this copy is retired.")}
+            moves, moved = move_contact_actions(a, succ["account_id"], by_account)
             out.append(Proposal(
                 kind="divest_duplicate", subject=a["account_id"],
                 title=f"Sold (retire copy): {a['name']} → {succ['name']}",
                 summary=(f"'{a['name']}' is under Bellhaven but not on the website; '{succ['name']}' under {succ.get('parent_name')} "
-                         f"has the same address and no AR is outstanding here, so mark Inactive with duplicate_of_account."),
-                confidence="medium", evidence=ev,
+                         f"has the same address and no AR is outstanding here, so mark Inactive with duplicate_of_account."
+                         + (f" {len(moved)} active contact(s) move to the successor." if moved else "")),
+                confidence="medium", evidence={**ev, "contacts_moved": moved},
                 actions=[{"op": "update_account", "account_id": a["account_id"], "fields": fields,
-                          "before": {"status": a.get("status"), "duplicate_of_account": a.get("duplicate_of_account", "")}}]))
+                          "before": {"status": a.get("status"), "duplicate_of_account": a.get("duplicate_of_account", "")}}] + moves))
         else:
             if a.get("status") == "Needs Review" and NOTE_TAG in (a.get("note") or ""):
                 continue  # already flagged by a previous approved run
@@ -348,4 +383,42 @@ def proposals_for_divested(accounts: list[dict], matched_ids: set[str], parent_i
                 confidence="medium", evidence=ev,
                 actions=[{"op": "update_account", "account_id": a["account_id"], "fields": fields,
                           "before": {"status": a.get("status")}}]))
+    return out
+
+
+# --------------------------------------------------------------------------- other operators' parents
+
+def proposals_for_parents(accounts: list[dict], matched_ids: set[str], parent_id: str, token: str,
+                          about_url: str) -> list[Proposal]:
+    """When every live child of another operator's parent account is a facility on the
+    Bellhaven website, that operator has effectively been absorbed. Leave the parent's
+    status alone (CHOW-preserved billing accounts may still sit under it) but say so in a note."""
+    out: list[Proposal] = []
+    live_children: dict[str, list[dict]] = {}
+    for a in accounts:
+        if is_live(a) and a.get("parent_id") and not is_parent_account(a):
+            live_children.setdefault(a["parent_id"], []).append(a)
+    for p in accounts:
+        if not is_parent_account(p) or p["account_id"] == parent_id:
+            continue
+        kids = live_children.get(p["account_id"], [])
+        if not kids or any(k["account_id"] not in matched_ids for k in kids):
+            continue
+        if NOTE_TAG in (p.get("note") or "") and "absorbed" in (p.get("note") or ""):
+            continue  # already noted by a previous approved run
+        names = ", ".join(sorted(k["name"] for k in kids))
+        fields = {"note": append_note(p.get("note", ""),
+                                      f"Operator absorbed by Bellhaven: all {len(kids)} live child account(s) ({names}) are facilities "
+                                      f"listed on the Bellhaven Senior Living website and are being re-linked or retired through the "
+                                      f"review queue. Parent left Active because CHOW-preserved billing accounts may still reference it. "
+                                      f"Source: {about_url}")}
+        out.append(Proposal(
+            kind="parent_note", subject=p["account_id"],
+            title=f"Operator absorbed: {p['name']}",
+            summary=(f"Every live child of '{p['name']}' ({len(kids)}: {names}) appears on the Bellhaven website, so this operator's "
+                     f"facilities now belong to Bellhaven. Add a note to the parent; its status is not changed."),
+            confidence="medium",
+            evidence={"account": public(p), "crm_url": crm_link(p["account_id"], token), "website_checked": about_url,
+                      "children": [public(k) for k in kids]},
+            actions=[{"op": "update_account", "account_id": p["account_id"], "fields": fields, "before": {}}]))
     return out

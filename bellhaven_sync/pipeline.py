@@ -15,7 +15,7 @@ from pathlib import Path
 from .config import CRM_TOKEN, PARENT_ACCOUNT_NAME, SITE_BASE_URL
 from .crm import CRM
 from .matcher import match_locations
-from .proposals import proposals_for_divested, proposals_for_match
+from .proposals import proposals_for_divested, proposals_for_match, proposals_for_parents
 from .scraper import Location, scrape
 from .store import Store
 
@@ -63,14 +63,16 @@ def run(dry_run: bool = False, store: Store | None = None, crm: CRM | None = Non
     results = match_locations(locations, accounts, contacts, parent["account_id"])
     proposals, match_rows, matched_ids = [], [], set()
     for mr in results:
-        ps, row = proposals_for_match(mr, parent["account_id"], parent["name"], CRM_TOKEN)
+        ps, row = proposals_for_match(mr, parent["account_id"], parent["name"], CRM_TOKEN, contacts)
         proposals.extend(ps)
         if row:
             match_rows.append(row)
         for c in mr.group:
             matched_ids.add(c.account_id)
     proposals.extend(proposals_for_divested(accounts, matched_ids, parent["account_id"], parent["name"],
-                                            CRM_TOKEN, f"{SITE_BASE_URL}/communities"))
+                                            CRM_TOKEN, f"{SITE_BASE_URL}/communities", contacts))
+    proposals.extend(proposals_for_parents(accounts, matched_ids, parent["account_id"], CRM_TOKEN,
+                                           f"{SITE_BASE_URL}/about"))
 
     by_kind: dict[str, int] = {}
     for p in proposals:

@@ -30,8 +30,9 @@ KIND_LABELS = {
     "divest_review": "Not on website",
     "divest_chow": "Sold (CHOW link)",
     "divest_duplicate": "Sold (retire copy)",
+    "parent_note": "Operator absorbed",
 }
-KIND_ORDER = ["chow", "reparent", "update", "create", "duplicate", "divest_chow", "divest_duplicate", "divest_review"]
+KIND_ORDER = ["chow", "reparent", "update", "create", "duplicate", "divest_chow", "divest_duplicate", "divest_review", "parent_note"]
 
 
 def store() -> Store:

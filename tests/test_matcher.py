@@ -1,7 +1,7 @@
 import unittest
 
 from bellhaven_sync.matcher import choose_survivor, find_successor, match_locations
-from bellhaven_sync.proposals import proposals_for_divested, proposals_for_match
+from bellhaven_sync.proposals import proposals_for_divested, proposals_for_match, proposals_for_parents
 from bellhaven_sync.scraper import Location
 
 PARENT = "P_BELL"
@@ -122,6 +122,35 @@ class MatcherTests(unittest.TestCase):
         ps = proposals_for_divested([old], set(), PARENT, "Bellhaven", "tok", "https://x")
         self.assertEqual(ps[0].kind, "divest_review")
         self.assertEqual(ps[0].actions[0]["fields"]["status"], "Needs Review")
+
+    def test_duplicate_moves_active_contacts_to_survivor(self):
+        keep = acct("A1", "Bellhaven of Owosso", "1 Main St", "Owosso", "MI", "48867", rev=100)
+        lose = acct("A2", "Bellhaven of Owosso", "1 Main St", "Owosso", "MI", "48867")
+        contacts = [{"contact_id": "C1", "account_id": "A2", "name": "Tricia", "title": "Admissions", "is_active": True},
+                    {"contact_id": "C2", "account_id": "A2", "name": "Gone", "title": "x", "is_active": False},
+                    {"contact_id": "C3", "account_id": "A1", "name": "Stays", "title": "y", "is_active": True}]
+        [mr] = self.run_match([loc("o", "Bellhaven of Owosso", "1 Main St", "Owosso", "MI", "48867")], [keep, lose], contacts)
+        ps, _ = proposals_for_match(mr, PARENT, "Bellhaven", "tok", contacts)
+        [dup] = [p for p in ps if p.kind == "duplicate"]
+        self.assertEqual(dup.subject, "A2")
+        moves = [a for a in dup.actions if a["op"] == "update_contact"]
+        self.assertEqual([(m["contact_id"], m["fields"]["account_id"]) for m in moves], [("C1", "A1")])  # inactive C2 and survivor's C3 untouched
+        self.assertEqual([c["name"] for c in dup.evidence["contacts_moved"]], ["Tricia"])
+
+    def test_parent_note_when_every_live_child_is_a_bellhaven_facility(self):
+        hv = acct("HV", "Harborview Care Group (Parent Account)", "", "", "", "", parent="")
+        k1 = acct("K1", "Harborview of Erie", "1 A St", "Erie", "PA", "16501", parent=OTHER)
+        k2 = acct("K2", "Harborview of Lima", "2 B St", "Lima", "OH", "45801", parent=OTHER)
+        for k in (k1, k2):
+            k["parent_id"] = "HV"
+        ps = proposals_for_parents([hv, k1, k2], {"K1", "K2"}, PARENT, "tok", "https://x/about")
+        self.assertEqual([(p.kind, p.subject) for p in ps], [("parent_note", "HV")])
+        self.assertEqual(set(ps[0].actions[0]["fields"]), {"note"})  # status and parent untouched
+        # one child not on the website -> no note
+        self.assertEqual(proposals_for_parents([hv, k1, k2], {"K1"}, PARENT, "tok", "https://x/about"), [])
+        # already noted by an approved run -> not proposed again
+        hv["note"] = "[bellhaven-sync 2026-11-11] Operator absorbed by Bellhaven: ..."
+        self.assertEqual(proposals_for_parents([hv, k1, k2], {"K1", "K2"}, PARENT, "tok", "https://x/about"), [])
 
     def test_care_offerings_map_to_crm_care_type(self):
         from bellhaven_sync.proposals import mapped_care_types, primary_care_type
