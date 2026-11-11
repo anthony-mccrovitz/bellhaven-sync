@@ -96,4 +96,4 @@ set Inactive, with a note saying why.
 
 ## Time spent
 
-(fill in)
+About 8 hours across two days: roughly 2 exploring the site and CRM and building the answer key by hand, 3 directing the build and checking its output, 1.5 fixing what came up (Union Square near miss, care-type bug, API outage, voided records), and 1.5 reviewing, recording, and writing this up.
