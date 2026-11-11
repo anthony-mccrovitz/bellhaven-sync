@@ -50,9 +50,10 @@ flips it to Needs Review if the CRM team would rather it drop off active lists.
 **Result on this sandbox**: 35 website locations (34 in the directory plus Findlay, which is
 only linked from the home page), 31 matched, 27 proposals: 2 CHOW, 4 re-parent, 5 field
 fixes, 4 new accounts, 7 duplicates, 1 sold with CHOW link, 2 Needs Review, 2 operator notes.
-<!-- CONFIRM BEFORE SUBMITTING: the next two sentences describe the end state after you approve in the app. -->
 I approved all but one (the low-confidence Ashtabula PO Box street change, since a PO Box can
-be a legitimate billing address). Re-running the pipeline afterwards produced 0 new proposals.
+be a legitimate billing address). Re-running the pipeline afterwards produced 0 new proposals
+(the rejected Ashtabula fix is regenerated and skipped as already decided). End state: the
+Bellhaven parent has exactly 35 live Active children, one per website location.
 
 ## Safe re-runs
 
