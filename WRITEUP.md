@@ -76,9 +76,11 @@ the way was adding a distinctive-token rule so "Union Square Senior Living" surf
 near miss on the "Bellhaven at Union Square" proposal instead of being invisible. No LLM
 calls run inside the pipeline; the matching is deterministic and explainable.
 
-One honest footnote: while probing what `POST /accounts` accepts, a probe request created a
-junk account (`001AB7308A3522D3AE`). There is no delete endpoint, so it is renamed
-"[VOID] API probe record - ignore", set Inactive, with a note saying why.
+Two honest footnotes. While probing what `POST /accounts` accepts, a probe request created a
+junk account (`001AB7308A3522D3AE`). And a test approval of the Tiffin CHOW before the demo
+recording created a first copy of the new Tiffin account (`001DF0AB4A1FB3F828`); I reverted
+the chow link and re-ran. There is no delete endpoint, so both records are renamed "[VOID] ...",
+set Inactive, with a note saying why.
 
 ## What I'd build next
 
